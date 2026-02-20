@@ -1,2 +1,22 @@
-name : DESK Message 
-on : push
+name: Site Monitor
+on:
+  schedule:
+    - cron: '*/10 * * * *' # 10분마다 실행
+  workflow_dispatch: # 수동 실행 버튼 활성화
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Install dependencies
+        run: npm install axios cheerio
+      - name: Run Scraper
+        run: node index.js
+      - name: Commit changes
+        run: |
+          git config --global user.name 'bot'
+          git config --global user.email 'bot@github.com'
+          git add db.json
+          git commit -m "Update count" || exit 0
+          git push
