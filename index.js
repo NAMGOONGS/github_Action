@@ -1,37 +1,38 @@
-const axios = require('axios');
-const cheerio = require('cheerio');
+const puppeteer = require('puppeteer');
 const fs = require('fs');
 
 async function checkSite() {
     const dbPath = './db.json';
+    let browser;
     try {
-        const response = await axios.get('https://excacademy.kr/rental-duty', {
-            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' },
-            timeout: 10000
+        // 가상 브라우저 실행
+        browser = await puppeteer.launch({ 
+            headless: "new",
+            args: ['--no-sandbox', '--disable-setuid-sandbox'] 
         });
-        const $ = cheerio.load(response.data);
+        const page = await browser.newPage();
         
-        // [수정 포인트] 사이트마다 다른 테이블 구조를 무시하고 
-        // 제목이 들어있을 법한 모든 'a' 태그나 리스트 요소를 검색합니다.
-        let title = "";
-        let worker = "확인필요";
-        let date = new Date().toLocaleDateString();
-
-        // 게시판 목록의 '제목' 부분을 찾는 가장 강력한 셀렉터 조합
-        const titleElement = $('.subject a, .title a, td a').first();
+        // 사이트 접속 및 리액트 로딩 대기
+        await page.goto('https://excacademy.kr/rental-duty', { waitUntil: 'networkidle2' });
         
-        if (titleElement.length > 0) {
-            title = titleElement.text().trim();
-        }
+        // Tailwind나 React 게시판에서 제목을 가진 요소를 더 넓게 탐색
+        const title = await page.evaluate(() => {
+            // 리액트/테일윈드 사이트에서 제목이 들어갈 만한 요소들을 순회
+            const selectors = [
+                'table tbody tr td a', 
+                'div[class*="subject"]', 
+                'div[class*="title"]',
+                '.board_list a'
+            ];
+            for (let s of selectors) {
+                const el = document.querySelector(s);
+                if (el && el.innerText.trim()) return el.innerText.trim();
+            }
+            return "";
+        });
 
-        // 만약 여전히 제목을 못 찾는다면? (최후의 수단)
         if (!title) {
-            console.log("DEBUG: 기본 셀렉터 실패. 전체 텍스트에서 추출 시도.");
-            title = $('td').eq(1).text().trim() || $('tr').eq(1).find('td').first().text().trim();
-        }
-
-        if (!title) {
-            console.log("CRITICAL_ERROR: 어떤 방법으로도 제목을 찾을 수 없습니다.");
+            console.log("CRITICAL_ERROR: 리액트 렌더링 후에도 제목을 찾지 못했습니다.");
             return;
         }
 
@@ -40,9 +41,8 @@ async function checkSite() {
 
         if (data.lastTitle !== title) {
             console.log("NEW_DATA_DETECTED");
-            console.log(`📅 확인일: ${date}`);
             console.log(`📌 최신글: ${title}`);
-            console.log(`🔗 링크: https://excacademy.kr/rental-duty`);
+            console.log(`⏰ 확인시간: ${new Date().toLocaleString('ko-KR')}`);
 
             data.lastTitle = title;
             fs.writeFileSync(dbPath, JSON.stringify(data, null, 2));
@@ -51,6 +51,8 @@ async function checkSite() {
         }
     } catch (error) {
         console.error("에러 발생:", error.message);
+    } finally {
+        if (browser) await browser.close();
     }
 }
 
