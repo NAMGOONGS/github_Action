@@ -15,7 +15,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4 # 최신 버전 권장
         with:
-        token: ${{ github.token }}
+          token: ${{ github.token }}
       - name: Install dependencies
         run: npm install axios cheerio
 
