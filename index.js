@@ -2,21 +2,29 @@ const axios = require('axios');
 const cheerio = require('cheerio');
 const fs = require('fs');
 
+// index.js의 scraper 부분 수정 예시
 async function checkSite() {
-    const dbPath = './db.json';
     try {
-        // 1. 사이트 데이터 가져오기
         const response = await axios.get('https://excacademy.kr/rental-duty');
         const $ = cheerio.load(response.data);
         
-        // [중요] 사이트 실제 HTML 구조에 맞춰 클래스명을 수정해야 합니다.
-        // 아래는 예시이며, 실제 사이트의 태그(예: tr, div.item 등)를 확인 후 변경하세요.
-        const latestPost = $('.list_item').first(); 
+        // 실제 사이트의 게시글 행(tr 또는 div)을 찾아야 합니다.
+        // 예: 보통 테이블의 첫 번째 줄은 tr:nth-child(1) 등입니다.
+        const latestPost = $('table tbody tr').first(); 
         
-        const date = latestPost.find('.date_class').text().trim();
-        const title = latestPost.find('.title_class').text().trim();
-        const worker = latestPost.find('.worker_class').text().trim();
-        const time = latestPost.find('.time_class').text().trim();
+        // 셀렉터 예시 (사이트 개발자 도구(F12)로 확인한 실제 클래스명을 넣어야 합니다)
+        const date = latestPost.find('td.date').text().trim();
+        const title = latestPost.find('td.subject a').text().trim();
+        const worker = latestPost.find('td.writer').text().trim();
+        // 근무시간이 따로 없다면 제목 등에서 추출해야 할 수도 있습니다.
+        const time = "본문 확인 필요"; 
+
+        if (!title) {
+            console.log("데이터를 찾을 수 없습니다. 셀렉터를 확인하세요.");
+            return;
+        }
+
+        // 이후 동일...
 
         // 2. DB 읽기
         if (!fs.existsSync(dbPath)) {
