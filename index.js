@@ -1,45 +1,44 @@
-const axios = require('axios');
+cconst axios = require('axios');
 const cheerio = require('cheerio');
 const fs = require('fs');
 
-// index.js의 scraper 부분 수정 예시
 async function checkSite() {
+    const dbPath = './db.json';
     try {
-        const response = await axios.get('https://excacademy.kr/rental-duty');
+        // 1. 사이트 데이터 가져오기 (차단 방지를 위해 User-Agent 추가)
+        const response = await axios.get('https://excacademy.kr/rental-duty', {
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' }
+        });
         const $ = cheerio.load(response.data);
         
-        // 실제 사이트의 게시글 행(tr 또는 div)을 찾아야 합니다.
-        // 예: 보통 테이블의 첫 번째 줄은 tr:nth-child(1) 등입니다.
+        // 2. 게시판 첫 번째 행 추출 (공지사항 태그가 있다면 .not('.notice') 등으로 제외 가능)
+        // 사이트 테이블 구조에 따라 tr을 선택합니다.
         const latestPost = $('table tbody tr').first(); 
         
-        // 셀렉터 예시 (사이트 개발자 도구(F12)로 확인한 실제 클래스명을 넣어야 합니다)
-        const date = latestPost.find('td.date').text().trim();
-        const title = latestPost.find('td.subject a').text().trim();
-        const worker = latestPost.find('td.writer').text().trim();
-        // 근무시간이 따로 없다면 제목 등에서 추출해야 할 수도 있습니다.
-        const time = "본문 확인 필요"; 
+        // 각 열(td)에서 데이터 추출 (사이트 실제 순서에 맞춰 eq 번호 조정)
+        const title  = latestPost.find('td').eq(1).text().trim(); // 보통 2번째 칸이 제목
+        const worker = latestPost.find('td').eq(2).text().trim(); // 보통 3번째 칸이 작성자/배정자
+        const date   = latestPost.find('td').eq(4).text().trim(); // 보통 5번째 칸이 날짜
 
         if (!title) {
-            console.log("데이터를 찾을 수 없습니다. 셀렉터를 확인하세요.");
+            console.log("데이터를 추출하지 못했습니다. 셀렉터를 점검하세요.");
             return;
         }
 
-        // 이후 동일...
-
-        // 2. DB 읽기
+        // 3. DB 파일 로드 및 비교
         if (!fs.existsSync(dbPath)) {
             fs.writeFileSync(dbPath, JSON.stringify({ lastTitle: "" }));
         }
         const data = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
 
-        // 3. 변경 사항 체크 및 메시지 생성
-        if (title && data.lastTitle !== title) {
-            const content = `📅 날짜: ${date}\n📌 제목: ${title}\n👤 배정자: ${worker}\n⏰ 근무시간: ${time}`;
-            
-            // GitHub Actions용 출력 (YML에서 이 값을 읽어 카톡으로 보냅니다)
-            // 여러 줄 메시지를 위해 특수 처리가 필요하므로 간단한 로그를 남깁니다.
-            console.log("NEW_DATA_DETECTED");
-            console.log(content);
+        // 4. 새로운 데이터인지 확인
+        if (data.lastTitle !== title) {
+            // YML이 감지할 수 있도록 첫 줄에 핵심 키워드 출력
+            console.log("NEW_DATA_DETECTED"); 
+            console.log(`📅 날짜: ${date}`);
+            console.log(`📌 제목: ${title}`);
+            console.log(`👤 배정자: ${worker}`);
+            console.log(`⏰ 확인시간: ${new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}`);
 
             // DB 업데이트
             data.lastTitle = title;
