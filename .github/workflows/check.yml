@@ -79,6 +79,7 @@ jobs:
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
+          git pull origin main --rebase  # ⭐ 이 줄을 추가해서 최신 상태를 먼저 가져옵니다.
           git add db.json
           git commit -m "Update lastTitle [skip ci]" || echo "No changes to commit"
           git push
