@@ -26,10 +26,14 @@ jobs:
 
       - name: Run Scraper
         id: scraper
+        env:
+          USER_ID: ${{ secrets.USER_ID }} # Secret에서 ID 가져오기
+          USER_PW: ${{ secrets.USER_PW }} # Secret에서 PW 가져오기
         run: |
           export PUPPETEER_EXECUTABLE_PATH=$(which google-chrome)
           RESULT=$(node index.js)
           echo "DEBUG_LOG: $RESULT"
+          # ... (이후 if 문 동일)
           
           if [[ "$RESULT" == *"NEW_DATA_DETECTED"* ]]; then
             # NEW_DATA_DETECTED 이후의 텍스트만 추출하고 불필요한 기호 제거
