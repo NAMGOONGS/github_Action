@@ -22,8 +22,8 @@ jobs:
       - name: Run Scraper
         id: scraper
         run: |
-          # index.js 실행 결과를 변수에 저장
           RESULT=$(node index.js)
+          echo "스크립트 결과출력: $RESULT" # 이 줄을 추가해서 로그에서 확인합시다.
           
           if [[ "$RESULT" == *"NEW_DATA_DETECTED"* ]]; then
             # NEW_DATA_DETECTED 단어를 제외한 나머지 텍스트만 추출
