@@ -44,7 +44,7 @@ jobs:
         run: |
           curl -v -X POST "https://kapi.kakao.com/v2/api/talk/memo/default/send" \
             -H "Authorization: Bearer ${{ env.at }}" \
-            -d 'template_object={
+            --data-urlencode 'template_object={
                   "object_type": "text",
                   "text": "${{ steps.scraper.outputs.msg }}",
                   "link": {
