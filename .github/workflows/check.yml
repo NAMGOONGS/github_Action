@@ -82,12 +82,15 @@ jobs:
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
           
-          # 수정된 db.json을 먼저 스테이징 및 커밋
+          # 1. 수정된 db.json을 먼저 장바구니에 담습니다(add)
           git add db.json
+          
+          # 2. 커밋을 먼저 수행해서 파일 상태를 확정 짓습니다
           git commit -m "Update lastTitle [skip ci]" || echo "No changes to commit"
           
-          # 서버의 최신 상태를 가져오며 합치기 (rebase 에러 방지)
+          # 3. 이제 깨끗한 상태이므로 서버의 최신 내용을 가져오며 합칩니다(rebase)
+          # 'theirs' 옵션은 혹시 충돌나면 무조건 액션이 만든 파일을 우선한다는 뜻입니다.
           git pull origin main --rebase -X theirs
           
-          # 최종 푸시
+          # 4. 서버로 올립니다
           git push
