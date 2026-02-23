@@ -11,65 +11,57 @@ async function checkSite() {
         });
         const page = await browser.newPage();
         
-        // 1. 사이트 접속
+        // 화면 크기를 넉넉하게 잡아야 요소가 잘 보입니다.
+        await page.setViewport({ width: 1280, height: 800 });
+
+        console.log("사이트 접속 중...");
         await page.goto('https://excacademy.kr/rental-duty', { 
-            waitUntil: 'networkidle0', 
+            waitUntil: 'networkidle2', 
             timeout: 60000 
         });
 
-        // 2. 로그인 처리
-        console.log("로그인 시도 중...");
-        // input 태그의 name이나 type을 기준으로 입력 (사이트 구조에 맞춤)
-        await page.type('input[type="text"], input[name*="email"]', 'ngs@exc.co.kr'); 
-        await page.type('input[type="password"]', 'tjrdl1584@');
+        // ⭐ 핵심: 로그인 입력창이 나타날 때까지 기다립니다.
+        console.log("로그인 입력창 대기 중...");
+        await page.waitForSelector('input', { timeout: 30000 });
+
+        console.log("로그인 정보 입력 중...");
+        // 좀 더 범용적인 선택자로 수정했습니다.
+        const inputs = await page.$$('input'); 
+        if (inputs.length >= 2) {
+            await inputs[0].type('ngs@exc.co.kr', { delay: 100 }); // 사람처럼 약간의 딜레이
+            await inputs[1].type('tjrdl1584@', { delay: 100 });
+        } else {
+            throw new Error("입력창을 충분히 찾지 못했습니다.");
+        }
         
-        // 로그인 버튼 클릭 (Enter 키 입력 또는 버튼 클릭)
         await page.keyboard.press('Enter');
         
-        // 로그인 후 페이지 이동 및 리액트 렌더링 대기
-        await page.waitForNavigation({ waitUntil: 'networkidle0' });
-        console.log("로그인 완료, 데이터 로딩 대기...");
+        // 로그인 후 게시판 내용이 뜰 때까지 대기
+        console.log("로그인 완료, 게시판 로딩 대기...");
+        await page.waitForNavigation({ waitUntil: 'networkidle2' });
+        // 게시판 데이터가 비동기로 뜰 수 있으므로 3초만 더 쉽니다.
+        await new Promise(r => setTimeout(r, 3000)); 
 
-        // 3. '주말 대관근무' 관련 데이터 추출
         const postData = await page.evaluate(() => {
-            // 게시판 행들을 모두 가져옴
-            const rows = Array.from(document.querySelectorAll('tr, div[class*="row"]'));
-            for (let row of rows) {
-                const text = row.innerText;
-                // '주말 대관근무'라는 텍스트가 포함된 행을 찾음
-                if (text.includes('주말 대관근무')) {
-                    return text.replace(/\n/g, ' ').trim(); // 줄바꿈 제거 후 반환
-                }
+            // 주말 대관근무 텍스트가 포함된 요소를 찾습니다.
+            const allText = document.body.innerText;
+            if (allText.includes('주말 대관근무')) {
+                // 해당 단어 주변 텍스트를 가져옵니다.
+                const index = allText.indexOf('주말 대관근무');
+                return allText.substring(index, index + 100).replace(/\n/g, ' ').trim();
             }
-            // 못 찾을 경우 첫 번째 요소라도 반환
-            const firstEntry = document.querySelector('td.subject, .title');
-            return firstEntry ? firstEntry.innerText.trim() : "";
+            return document.querySelector('table, ul, section')?.innerText.substring(0, 100) || "";
         });
 
-        if (!postData) {
-            console.log("CRITICAL_ERROR: 데이터를 찾을 수 없습니다.");
+        if (!postData || postData.length < 5) {
+            console.log("CRITICAL_ERROR: 로그인 후 데이터를 가져오지 못했습니다.");
             return;
         }
 
-        // 4. DB 비교
         if (!fs.existsSync(dbPath)) fs.writeFileSync(dbPath, JSON.stringify({ lastTitle: "" }));
         const data = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
 
         if (data.lastTitle !== postData) {
             console.log("NEW_DATA_DETECTED");
-            console.log(`📌 정보: ${postData.substring(0, 100)}`);
+            console.log(`📌 정보: ${postData}`);
             console.log(`⏰ 확인: ${new Date().toLocaleString('ko-KR')}`);
-
-            data.lastTitle = postData;
-            fs.writeFileSync(dbPath, JSON.stringify(data, null, 2));
-        } else {
-            console.log(`변화 없음: 기존 데이터와 동일합니다.`);
-        }
-    } catch (error) {
-        console.error("에러 발생:", error.message);
-    } finally {
-        if (browser) await browser.close();
-    }
-}
-
-checkSite();
