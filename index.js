@@ -1,33 +1,33 @@
-const axios = require('axios');
-const cheerio = require('cheerio');
 const fs = require('fs');
 
 async function checkSite() {
-    const url = "https://excacademy.kr/rental-duty";
-    const { data } = await axios.get(url);
-    const $ = cheerio.load(data);
+    const dbPath = './db.json';
     
-    // 대상 테이블의 행(tr) 개수 파악
-    const currentCount = $("tbody tr").length;
-    
-    // 이전 데이터 로드 (db.json 파일 등)
-    const db = JSON.parse(fs.readFileSync('./db.json', 'utf8'));
-    
-    if (currentCount > db.lastCount) {
-        console.log("새로운 데이터 발견! 카톡 발송 시작");
-        await sendKakaoMessage(`새로운 렌탈 의무 교육 데이터가 등록되었습니다! (현재: ${currentCount}건)`);
-        
-        // 데이터 업데이트
-        db.lastCount = currentCount;
-        fs.writeFileSync('./db.json', JSON.stringify(db));
-    } else {
-        console.log("변동 사항 없음.");
+    // 1. db.json 파일이 없으면 초기값 생성
+    if (!fs.existsSync(dbPath)) {
+        fs.writeFileSync(dbPath, JSON.stringify({ count: 0 }));
     }
-}
 
-// 카카오 API 발송 함수 (Access Token 필요)
-async function sendKakaoMessage(text) {
-    // 여기에 카카오 API 호출 로직 작성
+    // 2. 파일 읽기 (반드시 utf8 인코딩 추가)
+    const fileContent = fs.readFileSync(dbPath, 'utf8');
+    
+    // 3. JSON 파싱
+    let data;
+    try {
+        data = JSON.parse(fileContent);
+    } catch (e) {
+        console.error("JSON 파싱 에러! 파일 내용을 확인하세요:", fileContent);
+        data = { count: 0 };
+    }
+
+    // --- 여기에 본인의 스크래핑 로직 (axios, cheerio) ---
+    console.log("현재 데이터:", data.count);
+    
+    // 예시: 카운트 증가
+    data.count += 1;
+
+    // 4. 결과 저장
+    fs.writeFileSync(dbPath, JSON.stringify(data, null, 2));
 }
 
 checkSite();
