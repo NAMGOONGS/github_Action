@@ -22,11 +22,10 @@ jobs:
       - name: Run Scraper
         id: scraper
         run: |
-          # 가상 브라우저 실행을 위한 환경 변수
-          export PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+          # 가상 프레임버퍼 실행 (브라우저 구동용)
+          export PUPPETEER_EXECUTABLE_PATH=$(which google-chrome)
           RESULT=$(node index.js)
           echo "DEBUG_LOG: $RESULT"
-          # (이하 동일...)
           
           if [[ "$RESULT" == *"NEW_DATA_DETECTED"* ]]; then
             CLEAN_MSG=$(echo "$RESULT" | sed '1d')
