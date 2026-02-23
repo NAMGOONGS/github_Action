@@ -5,12 +5,17 @@ on:
     - cron: '*/10 * * * *' # 10분마다 실행
   workflow_dispatch: # 수동 실행 버튼 활성화
 
+
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4 # 최신 버전 권장
-
+        with:
+        token: ${{ github.token }}
       - name: Install dependencies
         run: npm install axios cheerio
 
