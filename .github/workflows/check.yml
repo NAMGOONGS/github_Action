@@ -23,10 +23,9 @@ jobs:
         id: scraper
         run: |
           RESULT=$(node index.js)
-          echo "스크립트 결과출력: $RESULT" # 이 줄을 추가해서 로그에서 확인합시다.
+          echo "DEBUG_LOG: $RESULT" # 로그에서 무엇이 찍히는지 직접 확인용
           
           if [[ "$RESULT" == *"NEW_DATA_DETECTED"* ]]; then
-            # NEW_DATA_DETECTED 단어를 제외한 나머지 텍스트만 추출
             CLEAN_MSG=$(echo "$RESULT" | sed '1d')
             echo "msg<<EOF" >> $GITHUB_OUTPUT
             echo "$CLEAN_MSG" >> $GITHUB_OUTPUT
