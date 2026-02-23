@@ -11,31 +11,27 @@ async function checkSite() {
         });
         const $ = cheerio.load(response.data);
         
-        // 사이트 구조 분석 결과: 게시판 리스트는 'tbody tr' 안에 있습니다.
-        // 공지사항을 제외하고 실제 데이터가 들어있는 행을 찾습니다.
-        const rows = $('table tbody tr');
-        let latestPost = null;
+        // [수정 포인트] 사이트마다 다른 테이블 구조를 무시하고 
+        // 제목이 들어있을 법한 모든 'a' 태그나 리스트 요소를 검색합니다.
+        let title = "";
+        let worker = "확인필요";
+        let date = new Date().toLocaleDateString();
 
-        rows.each((i, el) => {
-            // '공지'라고 적힌 행은 건너뜁니다.
-            if (!$(el).hasClass('notice') && !$(el).find('.notice_icon').length && latestPost === null) {
-                latestPost = $(el);
-            }
-        });
-
-        if (!latestPost) {
-            // 만약 위 조건으로 안 잡히면 강제로 첫 번째 행이라도 잡습니다.
-            latestPost = rows.first();
+        // 게시판 목록의 '제목' 부분을 찾는 가장 강력한 셀렉터 조합
+        const titleElement = $('.subject a, .title a, td a').first();
+        
+        if (titleElement.length > 0) {
+            title = titleElement.text().trim();
         }
 
-        // 각 칸(td)에서 데이터 추출
-        const title  = latestPost.find('td').eq(1).text().trim(); // 제목
-        const worker = latestPost.find('td').eq(2).text().trim(); // 작성자
-        const date   = latestPost.find('td').eq(4).text().trim(); // 날짜
-
-        // 핵심 디버깅: 무엇을 가져왔는지 로그에 남깁니다.
+        // 만약 여전히 제목을 못 찾는다면? (최후의 수단)
         if (!title) {
-            console.log("CRITICAL_ERROR: 제목(title) 추출에 실패했습니다. HTML 구조를 확인하세요.");
+            console.log("DEBUG: 기본 셀렉터 실패. 전체 텍스트에서 추출 시도.");
+            title = $('td').eq(1).text().trim() || $('tr').eq(1).find('td').first().text().trim();
+        }
+
+        if (!title) {
+            console.log("CRITICAL_ERROR: 어떤 방법으로도 제목을 찾을 수 없습니다.");
             return;
         }
 
@@ -44,9 +40,9 @@ async function checkSite() {
 
         if (data.lastTitle !== title) {
             console.log("NEW_DATA_DETECTED");
-            console.log(`📅 날짜: ${date}`);
-            console.log(`📌 제목: ${title}`);
-            console.log(`👤 배정자: ${worker}`);
+            console.log(`📅 확인일: ${date}`);
+            console.log(`📌 최신글: ${title}`);
+            console.log(`🔗 링크: https://excacademy.kr/rental-duty`);
 
             data.lastTitle = title;
             fs.writeFileSync(dbPath, JSON.stringify(data, null, 2));
