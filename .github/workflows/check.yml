@@ -34,7 +34,7 @@ jobs:
             echo "has_new=false" >> $GITHUB_OUTPUT
           fi
 
-     - name: Get Kakao Access Token
+      - name: Get Kakao Access Token
         run: |
           # 토큰을 받아오는 curl 명령어 실행 (기존 코드)
           RESPONSE=$(curl -X POST "https://kauth.kakao.com/oauth/token" ...)
@@ -47,12 +47,12 @@ jobs:
 
       - name: Send Kakao Message
         if: steps.scraper.outputs.has_new == 'true'
+        env:
+          # 위 단계에서 저장한 토큰을 환경변수로 불러옵니다.
+          KAKAO_TOKEN: ${{ env.ACCESS_TOKEN }}
         run: |
-          # 메시지에서 따옴표 등 에러 유발 문자를 한 번 더 제거
-          SAFE_MSG=$(echo "${{ steps.scraper.outputs.msg }}" | sed 's/"/\\"/g')
-          
           curl -v -X POST "https://kapi.kakao.com/v2/api/talk/memo/default/send" \
-            -H "Authorization: Bearer ${{ env.ACCESS_TOKEN }}" \
+            -H "Authorization: Bearer $KAKAO_TOKEN" \
             -d 'template_object={
                   "object_type": "text",
                   "text": "📌 새 공지 알림: '"$SAFE_MSG"'",
