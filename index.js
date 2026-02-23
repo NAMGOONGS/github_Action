@@ -11,7 +11,7 @@ async function checkSite() {
         });
         const page = await browser.newPage();
         
-        // 1. 사이트 접속 (네트워크 대기 시간을 넉넉히 줍니다)
+        // 1. 사이트 접속
         await page.goto('https://excacademy.kr/rental-duty', { 
             waitUntil: 'networkidle0', 
             timeout: 60000 
@@ -19,34 +19,39 @@ async function checkSite() {
 
         // 2. 게시판 제목을 찾는 '지능형' 로직
         const title = await page.evaluate(() => {
-            // 사이트 내의 모든 링크(a) 태그를 가져옵니다.
-            const links = Array.from(document.querySelectorAll('a, div, td'));
-            
-            // 일반적인 게시판 제목의 특징: 텍스트가 5자 이상이며, 특정 키워드를 포함하지 않음
+            // 우선순위 1: 전형적인 게시판 제목 태그들
+            const target = document.querySelector('.subject, .title, td.left, a[href*="view"]');
+            if (target && target.innerText.trim().length > 2 && !target.innerText.includes('로그인')) {
+                return target.innerText.trim();
+            }
+
+            // 우선순위 2: 태그를 순회하며 텍스트가 있는 링크 찾기
+            const links = Array.from(document.querySelectorAll('a, td'));
             for (let el of links) {
                 const text = el.innerText.trim();
-                // 너무 짧은 메뉴 이름이나 버튼은 제외하고, 실제 글 제목 같은 것만 필터링
-                if (text.length > 5 && !['로그인', '회원가입', '공지사항'].includes(text)) {
-                    // 부모 요소가 테이블이나 리스트 구조인지 확인 (선택 사항)
+                if (text.length > 5 && !['로그인', '회원가입', '공지사항', '비밀번호'].some(word => text.includes(word))) {
                     return text; 
                 }
             }
-            return "";
+            
+            // 우선순위 3: 최후의 수단 (본문 첫 줄)
+            return document.body.innerText.split('\n').find(line => line.trim().length > 5) || "";
         });
 
-        if (!title) {
-            // 만약 못 찾았다면 전체 화면 스캔 (최종)
-            console.log("CRITICAL_ERROR: 데이터를 여전히 찾지 못함. 사이트 점검 필요.");
+        // 3. 예외 처리
+        if (!title || title.includes('로그인')) {
+            console.log("CRITICAL_ERROR: 데이터를 여전히 찾지 못함 (로그인 페이지 가능성)");
             return;
         }
 
+        // 4. DB 비교 및 결과 출력
         if (!fs.existsSync(dbPath)) fs.writeFileSync(dbPath, JSON.stringify({ lastTitle: "" }));
         const data = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
 
         if (data.lastTitle !== title) {
             console.log("NEW_DATA_DETECTED");
-            console.log(`📌 발견된 제목: ${title}`);
-            console.log(`⏰ 업데이트 시각: ${new Date().toLocaleString('ko-KR')}`);
+            console.log(`📌 최신글: ${title}`);
+            console.log(`⏰ 업데이트: ${new Date().toLocaleString('ko-KR')}`);
 
             data.lastTitle = title;
             fs.writeFileSync(dbPath, JSON.stringify(data, null, 2));
