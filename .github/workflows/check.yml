@@ -3,7 +3,7 @@ name: Site Monitor
 on:
   schedule:
     - cron: '*/10 * * * *' # 10분마다 실행
-  workflow_dispatch: # 수동 실행 버튼 활성화
+  workflow_dispatch: # 수동 실행 버튼
 
 permissions:
   contents: write
@@ -22,11 +22,11 @@ jobs:
       - name: Run Scraper
         id: scraper
         run: |
-          # index.js 실행 결과를 변수에 담기
+          # index.js 실행 결과를 변수에 저장
           RESULT=$(node index.js)
           
           if [[ "$RESULT" == *"NEW_DATA_DETECTED"* ]]; then
-            # 첫 줄(NEW_DATA_DETECTED)을 제외한 나머지 데이터 추출
+            # NEW_DATA_DETECTED 단어를 제외한 나머지 텍스트만 추출
             CLEAN_MSG=$(echo "$RESULT" | sed '1d')
             echo "msg<<EOF" >> $GITHUB_OUTPUT
             echo "$CLEAN_MSG" >> $GITHUB_OUTPUT
@@ -61,7 +61,7 @@ jobs:
                     \"web_url\": \"https://excacademy.kr/rental-duty\",
                     \"mobile_web_url\": \"https://excacademy.kr/rental-duty\"
                   },
-                  \"button_title\": \"대관 현황 확인\"
+                  \"button_title\": \"현황 확인하기\"
                 }"
 
       - name: Commit changes
@@ -70,5 +70,5 @@ jobs:
           git config --global user.name 'bot'
           git config --global user.email 'bot@github.com'
           git add db.json
-          git commit -m "Update lastTitle: $(date +'%Y-%m-%d %H:%M')" || exit 0
+          git commit -m "Update db.json: $(date +'%Y-%m-%d %H:%M')" || exit 0
           git push
