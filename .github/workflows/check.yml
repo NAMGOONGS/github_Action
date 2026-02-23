@@ -27,16 +27,15 @@ jobs:
       - name: Run Scraper
         id: scraper
         env:
-          USER_ID: ${{ secrets.USER_ID }} # Secret에서 ID 가져오기
-          USER_PW: ${{ secrets.USER_PW }} # Secret에서 PW 가져오기
+          USER_ID: ${{ secrets.USER_ID }} # GitHub Secrets에서 가져옴
+          USER_PW: ${{ secrets.USER_PW }} # GitHub Secrets에서 가져옴
         run: |
           export PUPPETEER_EXECUTABLE_PATH=$(which google-chrome)
           RESULT=$(node index.js)
           echo "DEBUG_LOG: $RESULT"
-          # ... (이후 if 문 동일)
           
           if [[ "$RESULT" == *"NEW_DATA_DETECTED"* ]]; then
-            # NEW_DATA_DETECTED 이후의 텍스트만 추출하고 불필요한 기호 제거
+            # 메시지에서 줄바꿈 및 특수문자 제거 (JSON 파싱 에러 방지)
             CLEAN_MSG=$(echo "$RESULT" | grep -A 5 "NEW_DATA_DETECTED" | sed '1d' | tr -d '\n' | tr -d '\r' | sed 's/"/\\"/g')
             echo "msg=$CLEAN_MSG" >> $GITHUB_OUTPUT
             echo "has_new=true" >> $GITHUB_OUTPUT
@@ -47,7 +46,6 @@ jobs:
       - name: Get Kakao Access Token
         if: steps.scraper.outputs.has_new == 'true'
         run: |
-          # 마침표(...) 없이 실제 카카오 서버로 요청합니다.
           RESPONSE=$(curl -X POST "https://kauth.kakao.com/oauth/token" \
             -d "grant_type=refresh_token" \
             -d "client_id=${{ secrets.KAKAO_CLIENT_ID }}" \
@@ -83,7 +81,13 @@ jobs:
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git pull origin main --rebase  # ⭐ 이 줄을 추가해서 최신 상태를 먼저 가져옵니다.
+          
+          # 수정된 db.json을 먼저 스테이징 및 커밋
           git add db.json
           git commit -m "Update lastTitle [skip ci]" || echo "No changes to commit"
+          
+          # 서버의 최신 상태를 가져오며 합치기 (rebase 에러 방지)
+          git pull origin main --rebase -X theirs
+          
+          # 최종 푸시
           git push
