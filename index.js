@@ -10,62 +10,57 @@ async function checkSite() {
             args: ['--no-sandbox', '--disable-setuid-sandbox'] 
         });
         const page = await browser.newPage();
-        
-        // 브라우저 화면 크기 설정 (요소 가독성 향상)
         await page.setViewport({ width: 1280, height: 1000 });
 
-        console.log("사이트 접속 중...");
+        console.log("로그인 페이지 접속 중...");
+        // 처음부터 해당 게시판 주소로 접속하면 로그인이 안 된 경우 로그인 페이지로 튕깁니다.
         await page.goto('https://excacademy.kr/rental-duty', { 
             waitUntil: 'networkidle2', 
             timeout: 60000 
         });
 
-        // 1. 로그인 입력창이 나타날 때까지 대기
-        console.log("로그인 입력창 대기 중...");
-        try {
-            await page.waitForSelector('input[type="password"]', { timeout: 15000 });
-        } catch (e) {
-            console.log("대기 시간 초과: 입력창을 찾을 수 없습니다. 현재 페이지 텍스트 확인 시도.");
-        }
-
-        // 2. 로그인 정보 입력 (환경변수 사용)
+        // 1. 로그인 수행
         console.log("로그인 정보 입력 중...");
+        await page.waitForSelector('input', { timeout: 15000 });
         const inputs = await page.$$('input'); 
         
         if (inputs.length >= 2) {
-            // process.env를 통해 GitHub Secrets 값을 가져옵니다.
             await inputs[0].type(process.env.USER_ID || '', { delay: 50 }); 
             await inputs[1].type(process.env.USER_PW || '', { delay: 50 });
             await page.keyboard.press('Enter');
-        } else {
-            console.log("입력창 요소를 충분히 찾지 못했습니다. 선택자 확인이 필요합니다.");
-            return;
         }
-        
-        // 3. 로그인 후 게시판 이동 대기
-        console.log("로그인 완료, 게시판 데이터 로딩 대기...");
-        await page.waitForNavigation({ waitUntil: 'networkidle2' }).catch(() => {});
-        await new Promise(r => setTimeout(r, 4000)); // 리액트 렌더링을 위한 추가 여유 시간
 
-        // 4. '주말 대관근무' 데이터 추출
+        // 2. 로그인 완료 대기 및 서브 페이지 강제 재접속
+        console.log("로그인 완료 대기 및 게시판 페이지 재진입...");
+        await page.waitForNavigation({ waitUntil: 'networkidle2' }).catch(() => {});
+        
+        // ⭐ 핵심: 로그인 후 메인으로 튕겼을 경우를 대비해 다시 서브 페이지로 이동합니다.
+        await page.goto('https://excacademy.kr/rental-duty', { waitUntil: 'networkidle2' });
+        
+        // 게시판 내용(리액트)이 그려질 때까지 5초 충분히 대기
+        await new Promise(r => setTimeout(r, 5000)); 
+
+        // 3. '주말 대관근무' 데이터 정밀 추출
         const postData = await page.evaluate(() => {
-            const allText = document.body.innerText;
+            // 게시판 테이블 또는 특정 클래스를 가진 요소를 먼저 찾습니다.
+            // 사이트 구조에 따라 .board-list 또는 table 등을 탐색
+            const boardContainer = document.querySelector('table, .board-list, main');
+            const allText = boardContainer ? boardContainer.innerText : document.body.innerText;
+
             if (allText.includes('주말 대관근무')) {
                 const index = allText.indexOf('주말 대관근무');
-                // 해당 단어 포함 100자 추출 (불필요한 공백/줄바꿈 제거)
+                // 해당 단어부터 뒤로 150자까지만 가져오기
                 return allText.substring(index, index + 150).replace(/\s+/g, ' ').trim();
             }
-            // 특정 요소(테이블 등)가 있다면 해당 텍스트 우선 추출
-            const board = document.querySelector('table, .board-list, section');
-            return board ? board.innerText.substring(0, 100).replace(/\s+/g, ' ').trim() : "";
+            return "";
         });
 
-        if (!postData || postData.length < 5) {
-            console.log("CRITICAL_ERROR: 로그인 후 '주말 대관근무' 데이터를 찾지 못했습니다.");
+        if (!postData) {
+            console.log("CRITICAL_ERROR: '주말 대관근무' 데이터를 찾지 못했습니다. 현재 페이지에 해당 텍스트가 없습니다.");
             return;
         }
 
-        // 5. DB 비교 및 결과 출력
+        // 4. DB 비교 및 저장
         if (!fs.existsSync(dbPath)) fs.writeFileSync(dbPath, JSON.stringify({ lastTitle: "" }));
         const data = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
 
@@ -77,7 +72,7 @@ async function checkSite() {
             data.lastTitle = postData;
             fs.writeFileSync(dbPath, JSON.stringify(data, null, 2));
         } else {
-            console.log(`변화 없음: [${postData.substring(0, 15)}...]`);
+            console.log(`변화 없음: [${postData.substring(0, 20)}...]`);
         }
     } catch (error) {
         console.error("에러 발생:", error.message);
