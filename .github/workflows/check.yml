@@ -5,7 +5,6 @@ on:
     - cron: '*/10 * * * *' # 10분마다 실행
   workflow_dispatch: # 수동 실행 버튼 활성화
 
-
 permissions:
   contents: write
 
@@ -13,51 +12,63 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4 # 최신 버전 권장
+      - uses: actions/checkout@v4
         with:
           token: ${{ github.token }}
+
       - name: Install dependencies
         run: npm install axios cheerio
 
       - name: Run Scraper
         id: scraper
         run: |
-          node index.js
-          # 만약 index.js에서 어떤 텍스트를 결과로 남기고 싶다면 
-          # 여기에 환경 변수를 설정하는 로직을 넣을 수 있습니다.
-          echo "msg=사이트 모니터링 결과: $(date +'%H:%M') 체크 완료" >> $GITHUB_OUTPUT
+          # index.js 실행 결과를 변수에 담기
+          RESULT=$(node index.js)
+          
+          if [[ "$RESULT" == *"NEW_DATA_DETECTED"* ]]; then
+            # 첫 줄(NEW_DATA_DETECTED)을 제외한 나머지 데이터 추출
+            CLEAN_MSG=$(echo "$RESULT" | sed '1d')
+            echo "msg<<EOF" >> $GITHUB_OUTPUT
+            echo "$CLEAN_MSG" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+            echo "has_new=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_new=false" >> $GITHUB_OUTPUT
+          fi
 
       - name: Get Kakao Access Token
+        if: steps.scraper.outputs.has_new == 'true'
         id: kakao_token
         run: |
-          RESPONSE=$(curl -v -X POST "https://kauth.kakao.com/oauth/token" \
+          RESPONSE=$(curl -X POST "https://kauth.kakao.com/oauth/token" \
             -d "grant_type=refresh_token" \
             -d "client_id=${{ secrets.KAKAO_CLIENT_ID }}" \
             -d "client_secret=${{ secrets.KAKAO_CLIENT_SECRET }}" \
             -d "refresh_token=${{ secrets.KAKAO_REFRESH_TOKEN }}")
           
-          # 발급받은 access_token 추출
           ACCESS_TOKEN=$(echo $RESPONSE | jq -r '.access_token')
           echo "at=$ACCESS_TOKEN" >> $GITHUB_ENV
 
       - name: Send Kakao Message
+        if: steps.scraper.outputs.has_new == 'true'
         run: |
           curl -v -X POST "https://kapi.kakao.com/v2/api/talk/memo/default/send" \
             -H "Authorization: Bearer ${{ env.at }}" \
-            --data-urlencode 'template_object={
-                  "object_type": "text",
-                  "text": "${{ steps.scraper.outputs.msg }}",
-                  "link": {
-                    "web_url": "https://github.com/${{ github.repository }}",
-                    "mobile_web_url": "https://github.com/${{ github.repository }}"
+            --data-urlencode "template_object={
+                  \"object_type\": \"text\",
+                  \"text\": \"${{ steps.scraper.outputs.msg }}\",
+                  \"link\": {
+                    \"web_url\": \"https://excacademy.kr/rental-duty\",
+                    \"mobile_web_url\": \"https://excacademy.kr/rental-duty\"
                   },
-                  "button_title": "결과 확인"
-                }'
+                  \"button_title\": \"대관 현황 확인\"
+                }"
 
       - name: Commit changes
+        if: steps.scraper.outputs.has_new == 'true'
         run: |
           git config --global user.name 'bot'
           git config --global user.email 'bot@github.com'
           git add db.json
-          git commit -m "Update count" || exit 0
+          git commit -m "Update lastTitle: $(date +'%Y-%m-%d %H:%M')" || exit 0
           git push
