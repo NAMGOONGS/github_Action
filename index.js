@@ -10,85 +10,74 @@ async function checkSite() {
             args: ['--no-sandbox', '--disable-setuid-sandbox'] 
         });
         const page = await browser.newPage();
-        await page.setViewport({ width: 1280, height: 1200 });
+        await page.setViewport({ width: 1440, height: 1200 });
 
-        console.log("로그인 페이지 접속 중...");
+        console.log("로그인 및 페이지 접속 중...");
         await page.goto('https://excacademy.kr/rental-duty', { 
             waitUntil: 'networkidle2', 
             timeout: 60000 
         });
 
         // 1. 로그인 수행
-        console.log("로그인 정보 입력 중...");
         await page.waitForSelector('input', { timeout: 15000 });
         const inputs = await page.$$('input'); 
-        
         if (inputs.length >= 2) {
-            await inputs[0].type(process.env.USER_ID || '', { delay: 50 }); 
-            await inputs[1].type(process.env.USER_PW || '', { delay: 50 });
+            await inputs[0].type(process.env.USER_ID || '', { delay: 30 }); 
+            await inputs[1].type(process.env.USER_PW || '', { delay: 30 });
             await page.keyboard.press('Enter');
         }
 
-        // 2. 로그인 완료 및 페이지 안정화 대기
-        console.log("로그인 처리 대기...");
+        // 2. 로그인 후 리다이렉션 및 테이블 로딩 대기
         await page.waitForNavigation({ waitUntil: 'networkidle2' }).catch(() => {});
-        
-        // 확실하게 서브 페이지로 다시 이동
-        console.log("게시판 페이지 강제 진입...");
-        await page.goto('https://excacademy.kr/rental-duty', { waitUntil: 'networkidle2' });
-        
-        // ⭐ 핵심: 특정 글자가 포함된 요소가 나타날 때까지 최대 20초 대기
-        console.log("게시판 데이터 로딩 감시 중...");
-        try {
-            // '주말'이라는 단어가 포함된 td나 div가 생길 때까지 기다림
-            await page.waitForFunction(
-                () => document.body.innerText.includes('주말'),
-                { timeout: 20000 }
-            );
-        } catch (e) {
-            console.log("대기 시간 초과: '주말' 단어를 찾지 못했습니다. 현재 화면 분석을 강행합니다.");
+        // 혹시 메인으로 튕겼을 경우 다시 게시판으로 이동
+        if (page.url() !== 'https://excacademy.kr/rental-duty') {
+            await page.goto('https://excacademy.kr/rental-duty', { waitUntil: 'networkidle2' });
         }
 
-        // 3. 정밀 데이터 추출
-        const postData = await page.evaluate(() => {
-            // 게시판은 보통 table이나 list 구조입니다.
-            const rows = Array.from(document.querySelectorAll('tr, li, .list-item'));
-            const targetRow = rows.find(row => row.innerText.includes('주말 대관근무'));
-            
-            if (targetRow) {
-                return targetRow.innerText.replace(/\s+/g, ' ').trim();
-            }
+        // ⭐ 핵심: '대기' 상태 텍스트가 나타날 때까지 대기
+        console.log("대기 상태 일정 확인 중...");
+        await new Promise(r => setTimeout(r, 5000)); // 리액트 렌더링 여유 시간
 
-            // 못 찾았다면, 페이지 전체에서 해당 문구 주변 텍스트 긁기
-            const bodyText = document.body.innerText;
-            const keyword = '주말 대관근무';
-            const pos = bodyText.indexOf(keyword);
-            if (pos !== -1) {
-                return bodyText.substring(pos, pos + 200).replace(/\s+/g, ' ').trim();
+        // 3. '대기' 상태인 행만 정밀 추출
+        const waitStatusData = await page.evaluate(() => {
+            // 모든 행(tr 또는 div)을 가져옵니다. 
+            // 이미지상 테이블 구조이므로 tr이나 관련 요소를 탐색합니다.
+            const rows = Array.from(document.querySelectorAll('tr, .flex-row, div[role="row"]'));
+            
+            // '대기' 글자가 포함된 행들을 필터링합니다.
+            const waitingRows = rows.filter(row => {
+                const cells = Array.from(row.querySelectorAll('td, span, div'));
+                return cells.some(cell => cell.innerText.trim() === '대기');
+            });
+
+            if (waitingRows.length > 0) {
+                // 여러 개일 수 있으므로 모두 합치거나 가장 최신(첫 번째) 것을 가져옵니다.
+                return waitingRows.map(row => {
+                    // 행 내부의 불필요한 단어(보기, 수정, 삭제 아이콘 등)를 제외하고 텍스트만 정리
+                    return row.innerText.replace(/보기|거부이력/g, '').replace(/\s+/g, ' ').trim();
+                }).join(' / ');
             }
             return null;
         });
 
-        if (!postData) {
-            // 디버깅: 찾지 못했을 때 페이지에 어떤 글자들이 있는지 상위 200자 출력
-            const debugText = await page.evaluate(() => document.body.innerText.substring(0, 300));
-            console.log("CRITICAL_ERROR: 데이터를 찾지 못함. 현재 페이지 요약:", debugText);
+        if (!waitStatusData) {
+            console.log("현재 '대기' 상태인 대관 일정이 없습니다.");
             return;
         }
 
-        // 4. DB 비교
+        // 4. DB 비교 및 저장
         if (!fs.existsSync(dbPath)) fs.writeFileSync(dbPath, JSON.stringify({ lastTitle: "" }));
         const data = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
 
-        if (data.lastTitle !== postData) {
+        if (data.lastTitle !== waitStatusData) {
             console.log("NEW_DATA_DETECTED");
-            console.log(`📌 정보: ${postData}`);
-            console.log(`⏰ 확인: ${new Date().toLocaleString('ko-KR')}`);
+            console.log(`📌 대기 일정 발견: ${waitStatusData}`);
+            console.log(`⏰ 확인 시간: ${new Date().toLocaleString('ko-KR')}`);
 
-            data.lastTitle = postData;
+            data.lastTitle = waitStatusData;
             fs.writeFileSync(dbPath, JSON.stringify(data, null, 2));
         } else {
-            console.log(`변화 없음: [${postData.substring(0, 20)}...]`);
+            console.log("새로운 대기 일정 없음 (이전과 동일)");
         }
     } catch (error) {
         console.error("에러 발생:", error.message);
