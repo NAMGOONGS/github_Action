@@ -11,8 +11,8 @@ async function checkSite() {
         });
         const page = await browser.newPage();
         
-        // 화면 크기를 넉넉하게 잡아야 요소가 잘 보입니다.
-        await page.setViewport({ width: 1280, height: 800 });
+        // 브라우저 화면 크기 설정 (요소 가독성 향상)
+        await page.setViewport({ width: 1280, height: 1000 });
 
         console.log("사이트 접속 중...");
         await page.goto('https://excacademy.kr/rental-duty', { 
@@ -20,44 +20,52 @@ async function checkSite() {
             timeout: 60000 
         });
 
-        // ⭐ 핵심: 로그인 입력창이 나타날 때까지 기다립니다.
+        // 1. 로그인 입력창이 나타날 때까지 대기
         console.log("로그인 입력창 대기 중...");
-        await page.waitForSelector('input', { timeout: 30000 });
+        try {
+            await page.waitForSelector('input[type="password"]', { timeout: 15000 });
+        } catch (e) {
+            console.log("대기 시간 초과: 입력창을 찾을 수 없습니다. 현재 페이지 텍스트 확인 시도.");
+        }
 
+        // 2. 로그인 정보 입력 (환경변수 사용)
         console.log("로그인 정보 입력 중...");
-        // 좀 더 범용적인 선택자로 수정했습니다.
         const inputs = await page.$$('input'); 
+        
         if (inputs.length >= 2) {
-            await inputs[0].type('ngs@exc.co.kr', { delay: 100 }); // 사람처럼 약간의 딜레이
-            await inputs[1].type('tjrdl1584@', { delay: 100 });
+            // process.env를 통해 GitHub Secrets 값을 가져옵니다.
+            await inputs[0].type(process.env.USER_ID || '', { delay: 50 }); 
+            await inputs[1].type(process.env.USER_PW || '', { delay: 50 });
+            await page.keyboard.press('Enter');
         } else {
-            throw new Error("입력창을 충분히 찾지 못했습니다.");
+            console.log("입력창 요소를 충분히 찾지 못했습니다. 선택자 확인이 필요합니다.");
+            return;
         }
         
-        await page.keyboard.press('Enter');
-        
-        // 로그인 후 게시판 내용이 뜰 때까지 대기
-        console.log("로그인 완료, 게시판 로딩 대기...");
-        await page.waitForNavigation({ waitUntil: 'networkidle2' });
-        // 게시판 데이터가 비동기로 뜰 수 있으므로 3초만 더 쉽니다.
-        await new Promise(r => setTimeout(r, 3000)); 
+        // 3. 로그인 후 게시판 이동 대기
+        console.log("로그인 완료, 게시판 데이터 로딩 대기...");
+        await page.waitForNavigation({ waitUntil: 'networkidle2' }).catch(() => {});
+        await new Promise(r => setTimeout(r, 4000)); // 리액트 렌더링을 위한 추가 여유 시간
 
+        // 4. '주말 대관근무' 데이터 추출
         const postData = await page.evaluate(() => {
-            // 주말 대관근무 텍스트가 포함된 요소를 찾습니다.
             const allText = document.body.innerText;
             if (allText.includes('주말 대관근무')) {
-                // 해당 단어 주변 텍스트를 가져옵니다.
                 const index = allText.indexOf('주말 대관근무');
-                return allText.substring(index, index + 100).replace(/\n/g, ' ').trim();
+                // 해당 단어 포함 100자 추출 (불필요한 공백/줄바꿈 제거)
+                return allText.substring(index, index + 150).replace(/\s+/g, ' ').trim();
             }
-            return document.querySelector('table, ul, section')?.innerText.substring(0, 100) || "";
+            // 특정 요소(테이블 등)가 있다면 해당 텍스트 우선 추출
+            const board = document.querySelector('table, .board-list, section');
+            return board ? board.innerText.substring(0, 100).replace(/\s+/g, ' ').trim() : "";
         });
 
         if (!postData || postData.length < 5) {
-            console.log("CRITICAL_ERROR: 로그인 후 데이터를 가져오지 못했습니다.");
+            console.log("CRITICAL_ERROR: 로그인 후 '주말 대관근무' 데이터를 찾지 못했습니다.");
             return;
         }
 
+        // 5. DB 비교 및 결과 출력
         if (!fs.existsSync(dbPath)) fs.writeFileSync(dbPath, JSON.stringify({ lastTitle: "" }));
         const data = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
 
@@ -65,3 +73,17 @@ async function checkSite() {
             console.log("NEW_DATA_DETECTED");
             console.log(`📌 정보: ${postData}`);
             console.log(`⏰ 확인: ${new Date().toLocaleString('ko-KR')}`);
+
+            data.lastTitle = postData;
+            fs.writeFileSync(dbPath, JSON.stringify(data, null, 2));
+        } else {
+            console.log(`변화 없음: [${postData.substring(0, 15)}...]`);
+        }
+    } catch (error) {
+        console.error("에러 발생:", error.message);
+    } finally {
+        if (browser) await browser.close();
+    }
+}
+
+checkSite();
