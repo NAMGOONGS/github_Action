@@ -1,33 +1,44 @@
-name: Site Monitor
+name: Check Site and Send Kakao
 
 on:
+  push:
+    branches: [ main ]
   schedule:
-    - cron: '*/10 * * * *' # 10분마다 실행
-  workflow_dispatch: # 수동 실행 버튼
-
-permissions:
-  contents: write
+    - cron: '*/30 * * * *' # 30분마다 자동 실행
+  workflow_dispatch: # 수동 실행 버튼 활성화
 
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
         with:
-          token: ${{ github.token }}
+          node-version: '20'
 
       - name: Install dependencies
-        run: npm install puppeteer
+        run: |
+          npm install puppeteer
+          # 만약 다른 라이브러리(axios, cheerio)도 쓰고 있다면 여기에 추가하세요
+          # npm install axios cheerio
 
       - name: Run Scraper
         id: scraper
         run: |
+          # 가상 브라우저 실행을 위한 경로 설정
+          export PUPPETEER_EXECUTABLE_PATH=$(which google-chrome)
+          
+          # index.js 실행 및 결과 저장
           RESULT=$(node index.js)
           echo "DEBUG_LOG: $RESULT"
           
           if [[ "$RESULT" == *"NEW_DATA_DETECTED"* ]]; then
-            # 'NEW_DATA_DETECTED' 이후의 텍스트만 추출하고, 줄바꿈을 공백으로 치환
-            CLEAN_MSG=$(echo "$RESULT" | grep -A 10 "NEW_DATA_DETECTED" | sed '1d' | tr -d '\n' | tr -d '\r' | cut -c 1-150)
+            # 'NEW_DATA_DETECTED' 이후의 메시지만 추출 (줄바꿈 제거하여 한 줄로 만듦)
+            CLEAN_MSG=$(echo "$RESULT" | grep -A 5 "NEW_DATA_DETECTED" | sed '1d' | tr -d '\n' | tr -d '\r' | sed 's/"/\\"/g')
             echo "msg=$CLEAN_MSG" >> $GITHUB_OUTPUT
             echo "has_new=true" >> $GITHUB_OUTPUT
           else
@@ -35,39 +46,44 @@ jobs:
           fi
 
       - name: Get Kakao Access Token
+        if: steps.scraper.outputs.has_new == 'true'
         run: |
-          # 토큰을 받아오는 curl 명령어 실행 (기존 코드)
-          RESPONSE=$(curl -X POST "https://kauth.kakao.com/oauth/token" ...)
+          RESPONSE=$(curl -X POST "https://kauth.kakao.com/oauth/token" \
+            -d "grant_type=refresh_token" \
+            -d "client_id=${{ secrets.KAKAO_CLIENT_ID }}" \
+            -d "refresh_token=${{ secrets.KAKAO_REFRESH_TOKEN }}")
           
-          # JSON에서 access_token만 추출 (jq가 설치되어 있다면 jq 사용 권장)
+          # JSON에서 access_token만 추출
           TOKEN=$(echo $RESPONSE | sed 's/.*"access_token":"\([^"]*\)".*/\1/')
           
-          # ⭐ 중요: 이 줄이 있어야 다음 단계에서 ${{ env.ACCESS_TOKEN }}으로 쓸 수 있습니다.
-          echo "ACCESS_TOKEN=$TOKEN" >> $GITHUB_ENV
+          if [ -n "$TOKEN" ] && [ "$TOKEN" != "$RESPONSE" ]; then
+            echo "ACCESS_TOKEN=$TOKEN" >> $GITHUB_ENV
+            echo "✅ 토큰 발급 성공"
+          else
+            echo "❌ 토큰 발급 실패: $RESPONSE"
+            exit 1
+          fi
 
       - name: Send Kakao Message
         if: steps.scraper.outputs.has_new == 'true'
-        env:
-          # 위 단계에서 저장한 토큰을 환경변수로 불러옵니다.
-          KAKAO_TOKEN: ${{ env.ACCESS_TOKEN }}
         run: |
           curl -v -X POST "https://kapi.kakao.com/v2/api/talk/memo/default/send" \
-            -H "Authorization: Bearer $KAKAO_TOKEN" \
-            -d 'template_object={
-                  "object_type": "text",
-                  "text": "📌 새 공지 알림: '"$SAFE_MSG"'",
-                  "link": {
-                    "web_url": "https://excacademy.kr/rental-duty",
-                    "mobile_web_url": "https://excacademy.kr/rental-duty"
+            -H "Authorization: Bearer ${{ env.ACCESS_TOKEN }}" \
+            -d "template_object={
+                  \"object_type\": \"text\",
+                  \"text\": \"📌 새 공지 알림\n${{ steps.scraper.outputs.msg }}\",
+                  \"link\": {
+                    \"web_url\": \"https://excacademy.kr/rental-duty\",
+                    \"mobile_web_url\": \"https://excacademy.kr/rental-duty\"
                   },
-                  "button_title": "확인하기"
-                }'
+                  \"button_title\": \"사이트 확인\"
+                }"
 
-      - name: Commit changes
+      - name: Commit and Push changes
         if: steps.scraper.outputs.has_new == 'true'
         run: |
-          git config --global user.name 'bot'
-          git config --global user.email 'bot@github.com'
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
           git add db.json
-          git commit -m "Update db.json: $(date +'%Y-%m-%d %H:%M')" || exit 0
+          git commit -m "Update lastTitle [skip ci]" || echo "No changes to commit"
           git push
