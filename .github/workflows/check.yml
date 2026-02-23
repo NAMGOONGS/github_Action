@@ -22,16 +22,13 @@ jobs:
       - name: Run Scraper
         id: scraper
         run: |
-          # 가상 프레임버퍼 실행 (브라우저 구동용)
-          export PUPPETEER_EXECUTABLE_PATH=$(which google-chrome)
           RESULT=$(node index.js)
           echo "DEBUG_LOG: $RESULT"
           
           if [[ "$RESULT" == *"NEW_DATA_DETECTED"* ]]; then
-            CLEAN_MSG=$(echo "$RESULT" | sed '1d')
-            echo "msg<<EOF" >> $GITHUB_OUTPUT
-            echo "$CLEAN_MSG" >> $GITHUB_OUTPUT
-            echo "EOF" >> $GITHUB_OUTPUT
+            # 'NEW_DATA_DETECTED' 이후의 텍스트만 추출하고, 줄바꿈을 공백으로 치환
+            CLEAN_MSG=$(echo "$RESULT" | grep -A 10 "NEW_DATA_DETECTED" | sed '1d' | tr -d '\n' | tr -d '\r' | cut -c 1-150)
+            echo "msg=$CLEAN_MSG" >> $GITHUB_OUTPUT
             echo "has_new=true" >> $GITHUB_OUTPUT
           else
             echo "has_new=false" >> $GITHUB_OUTPUT
@@ -53,17 +50,20 @@ jobs:
       - name: Send Kakao Message
         if: steps.scraper.outputs.has_new == 'true'
         run: |
+          # 메시지에서 따옴표 등 에러 유발 문자를 한 번 더 제거
+          SAFE_MSG=$(echo "${{ steps.scraper.outputs.msg }}" | sed 's/"/\\"/g')
+          
           curl -v -X POST "https://kapi.kakao.com/v2/api/talk/memo/default/send" \
-            -H "Authorization: Bearer ${{ env.at }}" \
-            --data-urlencode "template_object={
-                  \"object_type\": \"text\",
-                  \"text\": \"${{ steps.scraper.outputs.msg }}\",
-                  \"link\": {
-                    \"web_url\": \"https://excacademy.kr/rental-duty\",
-                    \"mobile_web_url\": \"https://excacademy.kr/rental-duty\"
+            -H "Authorization: Bearer ${{ env.ACCESS_TOKEN }}" \
+            -d 'template_object={
+                  "object_type": "text",
+                  "text": "📌 새 공지 알림: '"$SAFE_MSG"'",
+                  "link": {
+                    "web_url": "https://excacademy.kr/rental-duty",
+                    "mobile_web_url": "https://excacademy.kr/rental-duty"
                   },
-                  \"button_title\": \"현황 확인하기\"
-                }"
+                  "button_title": "확인하기"
+                }'
 
       - name: Commit changes
         if: steps.scraper.outputs.has_new == 'true'
