@@ -34,18 +34,16 @@ jobs:
             echo "has_new=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Get Kakao Access Token
-        if: steps.scraper.outputs.has_new == 'true'
-        id: kakao_token
+     - name: Get Kakao Access Token
         run: |
-          RESPONSE=$(curl -X POST "https://kauth.kakao.com/oauth/token" \
-            -d "grant_type=refresh_token" \
-            -d "client_id=${{ secrets.KAKAO_CLIENT_ID }}" \
-            -d "client_secret=${{ secrets.KAKAO_CLIENT_SECRET }}" \
-            -d "refresh_token=${{ secrets.KAKAO_REFRESH_TOKEN }}")
+          # 토큰을 받아오는 curl 명령어 실행 (기존 코드)
+          RESPONSE=$(curl -X POST "https://kauth.kakao.com/oauth/token" ...)
           
-          ACCESS_TOKEN=$(echo $RESPONSE | jq -r '.access_token')
-          echo "at=$ACCESS_TOKEN" >> $GITHUB_ENV
+          # JSON에서 access_token만 추출 (jq가 설치되어 있다면 jq 사용 권장)
+          TOKEN=$(echo $RESPONSE | sed 's/.*"access_token":"\([^"]*\)".*/\1/')
+          
+          # ⭐ 중요: 이 줄이 있어야 다음 단계에서 ${{ env.ACCESS_TOKEN }}으로 쓸 수 있습니다.
+          echo "ACCESS_TOKEN=$TOKEN" >> $GITHUB_ENV
 
       - name: Send Kakao Message
         if: steps.scraper.outputs.has_new == 'true'
